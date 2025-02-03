@@ -1,0 +1,57 @@
+trigger:
+  branches:
+    include:
+      - none  # ブランチ名は適宜変更してください
+
+pool:
+  vmImage: 'windows-latest'
+
+stages:
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: BuildJob
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Install .NET 8 SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.x'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
+
+    - script: |
+        dotnet restore
+      displayName: 'Restore NuGet packages'
+
+    - script: |
+        dotnet build --configuration Release
+      displayName: 'Build project'
+
+    - script: |
+        dotnet publish --configuration Release --output $(Build.ArtifactStagingDirectory)
+      displayName: 'Publish project'
+
+    - publish: $(Build.ArtifactStagingDirectory)
+      artifact: drop
+
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  dependsOn: Build
+  jobs:
+  - deployment: DeployAzureFunctions
+    displayName: 'Deploy to Azure Functions'
+    environment: 'Your-Azure-Environment'  # 任意の環境名。リリース環境を管理する場合は設定してください
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+
+          - task: AzureFunctionApp@1
+            displayName: 'Deploy Azure Functions App'
+            inputs:
+              azureSubscription: 'YourAzureSubscriptionConnection'  # Azure サブスクリプションへのサービス接続名
+              appType: 'functionApp'
+              appName: 'mytutorialfuncapp'  # 作成した Function App の名前
+              package: $(System.DefaultWorkingDirectory)/drop
